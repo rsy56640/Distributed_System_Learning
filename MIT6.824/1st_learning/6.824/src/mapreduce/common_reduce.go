@@ -70,8 +70,7 @@ func doReduce(
 		json_decoders[i] = json.NewDecoder(file)
 	}
 
-	// store whole k-v pairs
-	key_values := make([]KeyValue, 0, 1<<10) // enough to hold ???
+	key_multivalues := make(map[string][]string, 1<<8)
 
 	for i := 0; i < nMap; i++ {
 		for json_decoders[i].More() {
@@ -80,16 +79,8 @@ func doReduce(
 			if err != nil {
 				log.Fatal(err)
 			}
-			key_values = append(key_values, kv)
+			key_multivalues[kv.Key] = append(key_multivalues[kv.Key], kv.Value)
 		}
-	}
-
-	//sort.Slice(key_values, func(i, j int) { return key_values[i].Key < key_values[j].Key })
-
-	key_multivalues := make(map[string][]string, len(key_values))
-
-	for _, kv := range key_values {
-		key_multivalues[kv.Key] = append(key_multivalues[kv.Key], kv.Value)
 	}
 
 	key_result := make(map[string]string, len(key_multivalues))
