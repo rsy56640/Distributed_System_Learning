@@ -9,7 +9,7 @@
 
 [MapReduce 阅读笔记](https://github.com/rsy56640/paper-reading/tree/master/%E5%88%86%E5%B8%83%E5%BC%8F/MapReduce)
 
-## Lab 1
+## Lab 1 MapReduce
 
 不难，但是对windows很不友好，，完全不能测试，还得搬到腾讯服务器上面，累成狗。。。
 
@@ -23,3 +23,70 @@
 - 其实**真正的 schedule 完全没有讲**，因为所有file都分散在不同的worker上，需要通过对这些file的分布进行一些计算，把task分到离file尽可能近的worker上
 - centos真tm好用，ftp传过去就完事了
 
+## Lec 2 RPC
+
+`goroutnie`s are pretty cheap, use `channel` and `WainGroup` to coordinate.   
+爬虫：1. IO并发，增加爬取速度；2. 每一个URL爬取一次
+
+goroutine 之间的通信机制值得研究一番（所谓 "*Do not communicate by sharing memory; instead, share memory by communicating.*"）   
+目前了解到的通信手段：
+
+- `sync.WaitGroup`
+- 任务计数
+- 返回值计数
+- `channel` 通知另一方停止，己方完成后 send to `channel`，另一方 `select`
+
+使用 共享数据（`mutex`） 和 `channel` 的时机：
+
+- 状态：共享数据（`mutex`）
+- 通信：`channel`
+- 等待事件：`channel`
+
+### RPC 调用
+
+client
+
+```go   
+    client, err := rpc.Dial("tcp", "host_addr")
+    client.Call("method_name", &args, &reply)
+```
+
+server
+
+```go   
+    rpcs := rpc.NewServer()
+    rpcs.Register(kv)
+    l, e := net.Listen("tcp", "host_addr")
+    go func() {
+        for {
+            conn, err := l.Accept()
+            if err == nil {
+                go rpcs.ServeConn(conn)
+            } else {
+                break
+            }
+        }
+        l.Close()
+    }()
+```
+
+server 的方法必须上锁，因为 RPC lib 为每个 request 创建一个 goroutine
+
+RPC 问题：dup request（如何保证幂等性）   
+Solution：时间戳，等
+
+## GFS 阅读笔记
+
+[GFS 阅读笔记](https://github.com/rsy56640/paper-reading/tree/master/%E5%88%86%E5%B8%83%E5%BC%8F/GFS)
+
+## Lec 3 GFS
+- [mit6.824 lec3 GFS](https://pdos.csail.mit.edu/6.824/notes/l-gfs-short.txt)
+- [mit6.824 GFS-FAQ](https://pdos.csail.mit.edu/6.824/papers/gfs-faq.txt)
+
+即使 append offset 不一致也无所谓，app 几乎总是读整个文件（换句话说，很少指定读操作的文件偏移量）
+
+关于 replica 的距离，google 将距离近的机器分配相近的IP地址，通过IP地址判断 replica 距离
+
+关于 consistency 和 performance 的 trade-off
+
+## Lec 4
