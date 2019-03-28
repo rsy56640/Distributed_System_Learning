@@ -89,4 +89,21 @@ Solution：时间戳，等
 
 关于 consistency 和 performance 的 trade-off
 
-## Lec 4
+## The design of a practical system for fault-tolerant virtual machines 阅读笔记
+
+[The design of a practical system for fault-tolerant virtual machines 阅读笔记](https://github.com/rsy56640/paper-reading/tree/master/%E5%88%86%E5%B8%83%E5%BC%8F/The%20design%20of%20a%20practical%20system%20for%20fault-tolerant%20virtual%20machines)
+
+## Lec 4 Primary/Backup Replication
+
+- [mit6.824 lec4 Primary/Backup Replication](https://pdos.csail.mit.edu/6.824/notes/l-vm-ft.txt)
+- [mit6.824 VMware FT FAQ](https://pdos.csail.mit.edu/6.824/papers/vm-ft-faq.txt)
+
+GFS 与 VM-FT 比较：
+
+- VM-FT 提供强一致性，并且对 client 透明
+- GFS 只提供存储的容错，对一致性没有保证，针对大文件顺序读写做优化
+
+bounce buffer 作用：为了屏蔽硬件DMA带来的不确定性读取操作   
+FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问；FT hypervisor 在这里 interrupt 并记录日志（在这里中断），然后 FT 把 bounce buffer 的内容 copy 到 primary's memory。backup 在同样的地方中断，然后读数据。
+
+## 
