@@ -106,4 +106,18 @@ GFS 与 VM-FT 比较：
 bounce buffer 作用：为了屏蔽硬件DMA带来的不确定性读取操作   
 FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问；FT hypervisor 在这里 interrupt 并记录日志（在这里中断），然后 FT 把 bounce buffer 的内容 copy 到 primary's memory。backup 在同样的地方中断，然后读数据。
 
+## Raft 阅读笔记
+
+[Raft阅读笔记](https://github.com/rsy56640/paper-reading/tree/master/%E5%88%86%E5%B8%83%E5%BC%8F/raft)
+
+## Lec 5 Raft
+
+- [mit6.824 lec 5 Raft](https://pdos.csail.mit.edu/6.824/notes/l-raft.txt)
+- [mit6.824 Raft FAQ](https://pdos.csail.mit.edu/6.824/papers/raft-faq.txt)
+
+性能上的一些问题：   
+1. 没有 batch write   
+2. Append 每次1个 entry   
+3. snapshot 过大，还有传输问题   
+
 ## 
