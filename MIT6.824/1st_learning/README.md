@@ -120,4 +120,9 @@ FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问�
 2. Append 每次1个 entry   
 3. snapshot 过大，还有传输问题   
 
-## 
+## Lec6 Raft2
+
+- [mit6.824 lec 6 Raft2](https://pdos.csail.mit.edu/6.824/notes/l-raft2.txt)
+- [mit6.824 Raft2 FAQ](https://pdos.csail.mit.edu/6.824/papers/raft2-faq.txt)
+
+
