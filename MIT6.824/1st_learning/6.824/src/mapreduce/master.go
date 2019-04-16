@@ -38,9 +38,9 @@ func (mr *Master) Register(args *RegisterArgs, _ *struct{}) error {
 	defer mr.Unlock()
 	debug("Register: worker %s\n", args.Worker)
 	mr.workers = append(mr.workers, args.Worker)
-
-	// tell forwardRegistrations() that there's a new workers[] entry.
-	mr.newCond.Broadcast()
+	mr.
+		// tell forwardRegistrations() that there's a new workers[] entry.
+		mr.newCond.Broadcast()
 
 	return nil
 }
