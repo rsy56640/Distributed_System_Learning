@@ -27,6 +27,21 @@ import (
 // import "bytes"
 // import "labgob"
 
+func Max(a, b int) int {
+	if a > b {
+		return a
+	} else {
+		return b
+	}
+}
+func Min(a, b int) int {
+	if a > b {
+		return b
+	} else {
+		return a
+	}
+}
+
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -433,22 +448,29 @@ func (rf *Raft) sendAppendEntry(server int, args *AppendEntryArg, reply *AppendE
 }
 
 func (rf *Raft) AppendLogReplyHandler(peerID int, reply *AppendEntryReply, curIndex int) {
-	if reply.Success == false {
-		if reply.Term > rf.currentTerm {
-			DPrintf("append log at [peer=%d] failed, term is out, new [term=%d]\n",
-				peerID, reply.Term)
-			rf.mu.Lock()
-			rf.turnToFollower(reply.Term)
-			rf.mu.Unlock()
-		} else if reply.Term == -1 { // log dismatched
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	// update self, regardless whether self is leader.
+	if reply.Success == false && reply.Term > rf.currentTerm {
+		DPrintf("append log at [peer=%d] failed, term is out, new [term=%d]\n",
+			peerID, reply.Term)
+		rf.turnToFollower(reply.Term)
+	}
+
+	// if self is still a leader
+	if rf.state == Leader {
+		// NB: msg might be delayed !!!
+		if reply.Success == false && reply.Term == -1 { // log dismatched, but msg maybe delayed.
 			DPrintf("log dismatched at [peer=%d]\n", peerID)
-			rf.nextIndex[peerID]--
+			rf.nextIndex[peerID] = Max(rf.nextIndex[peerID]-1, rf.matchIndex[peerID])
+		} else { // append log successfully
+			// NB: msg might be delayed !!!
+			DPrintf("append log at [peer=%d]\n", peerID)
+			// update 2 index
+			rf.nextIndex[peerID] = Max(curIndex+1, rf.nextIndex[peerID])
+			rf.matchIndex[peerID] = Max(curIndex, rf.matchIndex[peerID])
 		}
-	} else { // append log successfully
-		DPrintf("append log at [peer=%d]\n", peerID)
-		// update 2 index
-		rf.nextIndex[peerID] = curIndex + 1
-		rf.matchIndex[peerID] = curIndex
 	}
 }
 

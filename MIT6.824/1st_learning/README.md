@@ -120,9 +120,24 @@ FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问�
 2. Append 每次1个 entry   
 3. snapshot 过大，还有传输问题   
 
-## Lec6 Raft2
+## Lec 6 Raft2
 
 - [mit6.824 lec 6 Raft2](https://pdos.csail.mit.edu/6.824/notes/l-raft2.txt)
 - [mit6.824 Raft2 FAQ](https://pdos.csail.mit.edu/6.824/papers/raft2-faq.txt)
 
+## Lab 2A: Raft leader election
 
+说实话体验不是很好，我看网上很多人到 lab2就不做了，之前以为是有难度，但其实不然。主要问题在于，它给了 code base skeleton，但是几乎没有什么说明，我一开始根本都不知道我的哪些函数会被调用，一脸懵逼。而且 raft 是一个整体，它给了一个框架但其实很多东西是互相牵制的，又没说明，刚开始心态就崩了。。。举个例子：它的 Raft 结构体里面没有 timer，这个要自己加，但是整体调用逻辑它写死了，我都不知道它怎么调用，调用谁。我还是看了比人的实现才知道这是咋回事，然后又不熟悉 go，总共写了2天才过了 lab2A。   
+记录一下踩过的 go 的坑： `timer.Afterfunc(duration, func) *Timer`，这个函数返回一个 timer，到时自动调用 `func`，我一开始以为 resetTimer 直接重新赋值就好，但是**之前的那个其实没有关掉**。就导致一个 follower 不断地开始 canvass，term 瞬间上万。
+
+总结一下我的实现思路：
+
+- 首先进入 `Make()` 初始化为 follower，并且设置 timer
+- timer 自动触发 `rf.candidateRequestVote()`，开始拉选票
+- 所有的接受消息处理例程都要考虑到 network delay，也就是说收到的消息是过时的，这个要正确处理
+  - candidate 处理 vote reply：当这个消息 delay 时，**自己已经可能不是candidate了**
+  - server 处理 requestVoteRPC：正常走，没啥说的
+  - leader 处理 appendLog reply：**有可能自己不是leader了**，或者**可能是自己之前的appendRPC**，要正确更新 `nextIndex` 和 `matchIndex`
+  - server 处理 appendLogRPC：正常走
+- 我用了一个自动触发选举的 timer： `rf.electionTimer = time.AfterFunc(rf.electionTimeout, func() { rf.candidateRequestVote() })`，记得每次重设前先 `rf.electionTimer.Stop()`
+- election 成功后，就成为 leader，并开启一个服务例程，用来持续的发送 heartbeat，如果从 leader 变为 follower，记得关闭这个 heartbeat 服务
