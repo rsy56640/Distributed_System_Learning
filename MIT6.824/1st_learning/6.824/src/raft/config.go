@@ -366,6 +366,9 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 
 		cfg.mu.Lock()
 		cmd1, ok := cfg.logs[i][index]
+		DDEBUG(TEST,
+			"[cfg.peer=%d].apply: %+v\n",
+			i, cfg.logs[i])
 		cfg.mu.Unlock()
 
 		if ok {

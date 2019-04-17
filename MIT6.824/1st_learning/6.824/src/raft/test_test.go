@@ -302,6 +302,10 @@ func TestRejoin2B(t *testing.T) {
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect(leader1)
 
+	DDEBUG(TEST,
+		"[leader=%d] has been disconnected\n",
+		leader1)
+
 	// make old leader try to agree on some entries
 	cfg.rafts[leader1].Start(102)
 	cfg.rafts[leader1].Start(103)
@@ -314,8 +318,16 @@ func TestRejoin2B(t *testing.T) {
 	leader2 := cfg.checkOneLeader()
 	cfg.disconnect(leader2)
 
+	DDEBUG(TEST,
+		"[leader=%d] has been disconnected\n",
+		leader2)
+
 	// old leader connected again
 	cfg.connect(leader1)
+
+	DDEBUG(TEST,
+		"[leader=%d] has been reconnected\n",
+		leader1)
 
 	cfg.one(104, 2, true)
 
