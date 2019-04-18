@@ -149,7 +149,7 @@ FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问�
 > 代码可以在 commit 记录中找到
 
 还是有些坑的，，我之前没有用到 `applyCh`，导致完全不懂它在怎么测试，后来我人肉跟踪进去，发现他维护了我的 apply 的 log，即 `cfg.logs[]`。因为没有用 `applyCh`，这些全是空的，所以一个测试也过不了。。。   
-另一个问题是**什么时候 reset timer**：结论是只有 **RequestVoteRPC中确定了vote** 或者 **AppendEntryRPC中对比prevIndex和prevTerm成功** 时才 reset timer。这个bug我搞了挺久才发现，把日志全部打出来，然后一点点跟踪，最后发现 RequestVote 在 reject 的时候那个 server 也 reset timer。然而总共就2个server，一个log旧的 timer 时间短，一直让那个应该发起 canvass 的 server reset timer。。。对着这个“[raft动画](https://raft.github.io/)”玩了好久终于明白问题在哪了。（这个模拟好像不支持网络分区）
+另一个问题是**什么时候 reset timer**：结论是只有 **RequestVoteRPC中确定了vote 或 自己的term小且自己是leader** 或者 **AppendEntryRPC中对比prevIndex和prevTerm成功** 时才 reset timer。这个bug我搞了挺久才发现，把日志全部打出来，然后一点点跟踪，最后发现 RequestVote 在 reject 的时候那个 server 也 reset timer。然而总共就2个server，一个log旧的 timer 时间短，一直让那个应该发起 canvass 的 server reset timer。。。对着这个“[raft动画](https://raft.github.io/)”玩了好久终于明白问题在哪了。（这个模拟好像不支持网络分区）
 
 总结一下实现思路：
 
@@ -160,3 +160,19 @@ FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问�
   - leader 有的：`heartbeatRoutine()`，candidate 选举成功时开启，每隔一段时间就发起 `sendAppendEntryRPC`，如果对应的 server 没啥发的，就发空的，代表 heartbeat。还没同步到的 server 就一步一步往前尝试同步
 - 然后就是那个bug了：什么时候 reset timer，上面已经讨论过了
 - 还要注意的一点就是 network delay，当你收到消息（RPC 或者 RPC-reply）的时候，整个 state 可能已经变了，一些 corner case 要做到正确处理
+
+## Lab 2C: persist and Figure-8
+
+> 代码可以在 commit 记录中找到
+
+我之前写的代码里有2处bug：
+
+- canvass 接收 vote 时有可能 msg delay，也就是说如果一个 server 连续发起两次 canvass，有可能在第二次收到第一次的 vote，所以一定要比较一下 vote 的是哪个 term
+- 第二个bug算是对 go 不熟练造成的：AppendLogRPC 需要把多余的 log truncate 掉，因为有可能自己的 log 比 leader 长（自己可能是上一届 leader，有多余的 log）
+
+### 我认为 `TestFigure8Unreliable2C()` 有一个重大问题
+
+先来了一个 `cfg.one()`，然后乱搞（乱序消息，掉线，重连）一波，恢复，再来一个 `cfg.one()`。重点就是后面这个 `cfg.one()`。   
+`cfg.one()` 是这个意思：选一个 leader，我们认为它可以就这个 command 达成一致，检测并返回。   
+但是现在有个问题：乱搞一波之后 reconnect，紧接着调用 `cfg.one()`。考虑这样一种情况：一个 old-term leader reconnect 之后，被 `cfg.one()` 选中，并承诺完成这个 agreement，然而它马上就会发现自己的 term 是 out-of-date，所以这个 command 就没了。这样 `cfg.one()` 中会认为没有达成一致。   
+**我个人的做法是在 reconnect 和 `cfg.one()` 中间等待3s，让 reconnect server 认清一下现状。**

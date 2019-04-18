@@ -18,14 +18,20 @@ package raft
 //
 
 import (
+	"bytes"
+	"labgob"
 	"labrpc"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// import "bytes"
-// import "labgob"
+var msgNo uint64 = 0
+
+func getMsgNo() uint64 {
+	return atomic.AddUint64(&msgNo, 1)
+}
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -76,7 +82,8 @@ type Raft struct {
 	currentTerm int
 	votedFor    int // -1 means no vote during current term
 	logs        []LogEntry
-	leader      int // -1 means donot know who is leader in current term
+
+	leader int // -1 means donot know who is leader in current term
 
 	// record time duration
 	electionTimer     *time.Timer   // election timer
@@ -135,12 +142,21 @@ func (rf *Raft) turnToFollower(term int) {
 func (rf *Raft) persist() {
 	// Your code here (2C).
 	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// data := w.Bytes()
-	// rf.persister.SaveRaftState(data)
+
+	DDEBUG(PERSIST,
+		"[peer=%d] persists\n",
+		rf.me)
+
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+
+	e.Encode(rf.state)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.logs)
+
+	data := w.Bytes()
+	rf.persister.SaveRaftState(data)
 }
 
 //
@@ -152,17 +168,18 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	// Your code here (2C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+
+	DDEBUG(PERSIST,
+		"[peer=%d] read persists\n",
+		rf.me)
+
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+
+	d.Decode(&rf.state)
+	d.Decode(&rf.currentTerm)
+	d.Decode(&rf.votedFor)
+	d.Decode(&rf.logs)
 }
 
 //
@@ -175,6 +192,7 @@ type RequestVoteArgs struct {
 	CandidateID   int
 	LastLogIndex  int
 	LastLogTerm   int
+	MsgNo         uint64
 }
 
 //
@@ -185,6 +203,7 @@ type RequestVoteReply struct {
 	// Your data here (2A).
 	CurrentTerm int // used when not vote, return self term if candidate is out of date.
 	VoteGranted bool
+	MsgNo       uint64
 }
 
 //
@@ -197,14 +216,17 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	defer rf.mu.Unlock()
 	defer rf.persist()
 
+	reply.MsgNo = args.MsgNo
+
 	// update self if necessary
-	// no need to reset timer !!!
+	// no need to reset timer unless me is leader !!!
 	if rf.currentTerm < args.CandidateTerm {
 		DDEBUG(REQUEST_VOTE_RPC,
-			"[candidate=%d] RequestVoteArgs [peer=%d], self is out, new [term=%d]\n",
-			args.CandidateID, rf.me, args.CandidateTerm)
+			"[msgNo=%d], [candidate=%d] RequestVoteArgs [peer=%d], self is out, new [term=%d]\n",
+			args.MsgNo, args.CandidateID, rf.me, args.CandidateTerm)
 		if rf.state == Leader {
 			rf.notLeaderCh <- struct{}{}
+			rf.resetTimer()
 		}
 		rf.state = Follower
 		rf.currentTerm = args.CandidateTerm
@@ -215,8 +237,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// reject if candidate is out of date
 	if rf.currentTerm > args.CandidateTerm {
 		DDEBUG(REQUEST_VOTE_RPC,
-			"[candidate=%d] RequestVoteArgs [peer=%d], candidate is out, new [term=%d]\n",
-			args.CandidateID, rf.me, rf.currentTerm)
+			"[msgNo=%d], [candidate=%d] RequestVoteArgs [peer=%d], candidate is out, new [term=%d]\n",
+			args.MsgNo, args.CandidateID, rf.me, rf.currentTerm)
 		reply.CurrentTerm = rf.currentTerm
 		reply.VoteGranted = false
 		return
@@ -232,8 +254,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		}
 		if vote == true {
 			DDEBUG(REQUEST_VOTE_RPC,
-				"[candidate=%d] RequestVoteArgs [peer=%d], get vote !!!\n",
-				args.CandidateID, rf.me)
+				"[msgNo=%d], [candidate=%d] RequestVoteArgs [peer=%d], get vote !!!\n",
+				args.MsgNo, args.CandidateID, rf.me)
 			reply.VoteGranted = true
 			// update self, reset timer
 			rf.state = Follower
@@ -243,16 +265,16 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			rf.resetTimer()
 		} else {
 			DDEBUG(REQUEST_VOTE_RPC,
-				"[candidate=%d] RequestVoteArgs [peer=%d], reject due to log safety !!!\n",
-				args.CandidateID, rf.me)
+				"[msgNo=%d], [candidate=%d] RequestVoteArgs [peer=%d], reject due to log safety !!!\n",
+				args.MsgNo, args.CandidateID, rf.me)
 			reply.VoteGranted = false
 			reply.CurrentTerm = -1
 			return
 		}
 	} else { // have voted for other, so reject
 		DDEBUG(REQUEST_VOTE_RPC,
-			"[candidate=%d] RequestVoteArgs [peer=%d], reject since have voted for [peer=%d] !!!\n",
-			args.CandidateID, rf.me, rf.votedFor)
+			"[msgNo=%d], [candidate=%d] RequestVoteArgs [peer=%d], reject since have voted for [peer=%d] !!!\n",
+			args.MsgNo, args.CandidateID, rf.me, rf.votedFor)
 		reply.VoteGranted = false
 		return
 	}
@@ -303,10 +325,8 @@ func (rf *Raft) electionSuccessReset() {
 	for i := 0; i < count; i++ {
 		rf.nextIndex[i] = length
 		rf.matchIndex[i] = 0
-		if i == rf.me {
-			rf.matchIndex[i] = length - 1
-		}
 	}
+	rf.matchIndex[rf.me] = length - 1
 }
 
 func (rf *Raft) candidateRequestVote() {
@@ -322,23 +342,33 @@ func (rf *Raft) candidateRequestVote() {
 		CandidateID:   rf.me,
 		LastLogIndex:  rf.logs[len(rf.logs)-1].Index,
 		LastLogTerm:   rf.logs[len(rf.logs)-1].Term,
+		MsgNo:         getMsgNo(),
 	}
 	DDEBUG(CANVASS_VOTE,
-		"[candidate=%d] begin canvass, [term=%d]\n", rf.me, rf.currentTerm)
+		"[msgNp=%d], [candidate=%d] begin canvass, [term=%d]\n",
+		voteArg.MsgNo, rf.me, rf.currentTerm)
+	currentTerm := rf.currentTerm
 	rf.mu.Unlock()
 
 	vote := 1
 
 	// maybe network delay when reply
-	replyHandler := func(reply *RequestVoteReply, peerID int) {
+	replyHandler := func(reply *RequestVoteReply, peerID, currentTerm int) {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
+
+		// !!!!!!!!!!!
+		// msg might be delayed.
+		// !!!!!!!!!!!
+		if rf.currentTerm > currentTerm {
+			return
+		}
 
 		// update routine
 		if reply.VoteGranted == false && reply.CurrentTerm > rf.currentTerm {
 			DDEBUG(CANVASS_VOTE,
-				"[candidate=%d] turn to follower, new [term=%d]\n",
-				rf.me, reply.CurrentTerm)
+				"[msgNo=%d], [candidate=%d] turn to follower, new [term=%d]\n",
+				reply.MsgNo, rf.me, reply.CurrentTerm)
 			rf.turnToFollower(reply.CurrentTerm)
 		}
 
@@ -346,8 +376,8 @@ func (rf *Raft) candidateRequestVote() {
 			if reply.VoteGranted == true { // vote success
 				vote++
 				DDEBUG(CANVASS_VOTE,
-					"[candidate=%d] has [vote=%d]\n",
-					rf.me, vote)
+					"[msgNo=%d], [candidate=%d] has [vote=%d]\n",
+					reply.MsgNo, rf.me, vote)
 				if vote*2 > peer_size {
 					// no need to reset timer when become leader
 					DDEBUG(CANVASS_VOTE, "[candidate=%d] becomes leader\n", rf.me)
@@ -366,17 +396,23 @@ func (rf *Raft) candidateRequestVote() {
 		voteReply := RequestVoteReply{}
 		go func(peerID int) {
 			rf.sendRequestVote(peerID, &voteArg, &voteReply)
-			replyHandler(&voteReply, peerID)
+			replyHandler(&voteReply, peerID, currentTerm)
 		}(i)
 	}
 }
 
 func (rf *Raft) resetTimer() {
+	DDEBUG(TIMER,
+		"[peer=%d] reset timer\n",
+		rf.me)
 	rf.electionTimer.Stop()
 	rf.electionTimer = time.AfterFunc(rf.electionTimeout, func() { rf.candidateRequestVote() })
 }
 
 func (rf *Raft) stopTimer() {
+	DDEBUG(TIMER,
+		"[peer=%d] stop timer\n",
+		rf.me)
 	rf.electionTimer.Stop()
 }
 
@@ -401,7 +437,8 @@ func (rf *Raft) applyEntryRoutine() {
 		default:
 			rf.mu.Lock()
 			rf.waitCommitUntil(func() bool { return rf.lastApplied < rf.commitIndex })
-			logs = rf.logs[rf.lastApplied+1 : rf.commitIndex+1]
+			logs = make([]LogEntry, rf.commitIndex-rf.lastApplied)
+			copy(logs, rf.logs[rf.lastApplied+1:rf.commitIndex+1])
 			rf.lastApplied = rf.commitIndex
 			rf.mu.Unlock()
 		}
@@ -428,6 +465,7 @@ type AppendEntryArg struct {
 	PrevLogTerm       int
 	Entries           []LogEntry
 	LeaderCommitIndex int
+	MsgNo             uint64
 }
 
 type AppendEntryReply struct {
@@ -436,7 +474,10 @@ type AppendEntryReply struct {
 	//		self.term 		if the msg is delayed.
 	Term int
 
+	FirstIndex int // denotes the first index of the prevTerm in collision.
+
 	Success bool
+	MsgNo   uint64
 }
 
 func (rf *Raft) AppendEntry(args *AppendEntryArg, reply *AppendEntryReply) {
@@ -444,11 +485,13 @@ func (rf *Raft) AppendEntry(args *AppendEntryArg, reply *AppendEntryReply) {
 	defer rf.mu.Unlock()
 	defer rf.persist()
 
+	reply.MsgNo = args.MsgNo
+
 	// update self
 	if args.Term > rf.currentTerm {
 		DDEBUG(APPEND_ENTRY_RPC,
-			"append log RPC [leader=%d], [peer=%d], self is out, new [term=%d]\n",
-			args.Leader, rf.me, args.Term)
+			"[msgNo=%d], append log RPC [leader=%d], [peer=%d], self is out, new [term=%d]\n",
+			args.MsgNo, args.Leader, rf.me, args.Term)
 		rf.turnToFollower(args.Term)
 	}
 
@@ -457,8 +500,8 @@ func (rf *Raft) AppendEntry(args *AppendEntryArg, reply *AppendEntryReply) {
 		// return failure and current term to notice the leader,
 		// leader will find the term is same or less, then discard.
 		DDEBUG(APPEND_ENTRY_RPC,
-			"append log RPC [leader=%d], [peer=%d], msg is delayed, current [term=%d]\n",
-			args.Leader, rf.me, args.Term)
+			"[msgNo=%d], append log RPC [leader=%d], [peer=%d], msg is delayed, current [term=%d]\n",
+			args.MsgNo, args.Leader, rf.me, rf.currentTerm)
 		reply.Success = false
 		reply.Term = rf.currentTerm
 	} else { // args.term == rf.currentTerm
@@ -469,31 +512,43 @@ func (rf *Raft) AppendEntry(args *AppendEntryArg, reply *AppendEntryReply) {
 		}
 
 		// the current leader's message, regardless of network delay.
-		rf.resetTimer()
+		rf.resetTimer() // here might reset timer twice, since me.term is less.
 
 		// attempt to append log entries
 		// first check previous term and index
 		if args.PrevLogIndex <= rf.logs[len(rf.logs)-1].Index &&
 			args.PrevLogTerm == rf.logs[args.PrevLogIndex].Term {
 
-			DDEBUG(APPEND_ENTRY_RPC,
-				"[peer=%d], log = %v, append-log = %v\n",
-				rf.me, rf.logs, args.Entries)
+			if len(args.Entries) > 1 {
+				DDEBUG(APPEND_ENTRY_RPC,
+					"[msgNo=%d], [peer=%d], [old.log=(%d, %d)], [append-log=(%d, %d)]\n",
+					args.MsgNo, rf.me, rf.logs[len(rf.logs)-1].Term, rf.logs[len(rf.logs)-1].Index,
+					args.Entries[len(args.Entries)-1].Term, args.Entries[len(args.Entries)-1].Index)
+			}
 
 			// NB: the leader's logs might be shorter than me (no vote for leader)
 			// since me might be the previous leader, and have extra log.
 
-			// update log
-			update_size := Min(len(args.Entries), rf.logs[len(rf.logs)-1].Index-args.PrevLogIndex)
-			for i := 0; i < update_size; i++ {
-				rf.logs[i+args.PrevLogIndex+1] = args.Entries[i]
-			}
-
 			// append log
-			append_size := len(args.Entries) - update_size
-			for i := update_size; i < update_size+append_size; i++ {
+			rf.logs = rf.logs[0 : args.PrevLogIndex+1]
+			append_size := len(args.Entries)
+			for i := 0; i < append_size; i++ {
 				rf.logs = append(rf.logs, args.Entries[i])
 			}
+
+			/*
+				// update log
+				update_size := Min(len(args.Entries), rf.logs[len(rf.logs)-1].Index-args.PrevLogIndex)
+				for i := 0; i < update_size; i++ {
+					rf.logs[i+args.PrevLogIndex+1] = args.Entries[i]
+				}
+
+				// append log
+				append_size := len(args.Entries) - update_size
+				for i := update_size; i < update_size+append_size; i++ {
+					rf.logs = append(rf.logs, args.Entries[i])
+				}
+			*/
 
 			// update commit index
 			// ok to update,
@@ -506,18 +561,24 @@ func (rf *Raft) AppendEntry(args *AppendEntryArg, reply *AppendEntryReply) {
 			reply.Success = true
 
 			DDEBUG(APPEND_ENTRY_RPC,
-				"log consistency check ok, [leader=%d], [peer=%d], [term=%d], update log[%d:%d], append log[%d:%d]\n",
-				args.Leader, rf.me, args.Term,
-				args.PrevLogIndex+1, args.PrevLogIndex+1+update_size,
-				args.PrevLogIndex+1+update_size, len(rf.logs))
+				"[msgNo=%d], log consistency check ok, [leader=%d], [peer=%d], [term=%d], append log[%d:%d]\n",
+				args.MsgNo, args.Leader, rf.me, args.Term,
+				len(rf.logs)-append_size, len(rf.logs))
 
 		} else { // check fail
 			DDEBUG(APPEND_ENTRY_RPC,
-				"log consistency check failed, [leader=%d], [peer=%d], [term=%d], [prev=(%d,%d)]\n",
-				args.Leader, rf.me, args.Term,
+				"[msgNo=%d], log consistency check failed, [leader=%d], [peer=%d], [term=%d], [prev=(%d,%d)]\n",
+				args.MsgNo, args.Leader, rf.me, args.Term,
 				args.PrevLogTerm, args.PrevLogIndex)
 			reply.Term = -1
 			reply.Success = false
+			reply.FirstIndex = 1
+			for i := 0; i < len(rf.logs); i++ {
+				if rf.logs[i].Term == args.PrevLogTerm {
+					reply.FirstIndex = rf.logs[i].Index
+					break
+				}
+			}
 		}
 	}
 }
@@ -532,43 +593,57 @@ func (rf *Raft) AppendLogReplyHandler(peerID int, reply *AppendEntryReply, curIn
 	defer rf.mu.Unlock()
 
 	// update self, regardless whether self is leader.
-	if reply.Success == false && reply.Term > rf.currentTerm {
-		DDEBUG(LEADER_APPEN_LOG_REPLY_HANDLER,
-			"[leader=%d] append log at [peer=%d] failed, term is out, new [term=%d]\n",
-			rf.me, peerID, reply.Term)
-		rf.turnToFollower(reply.Term)
-	}
+	if reply.Success == false && reply.Term != -1 {
+		if reply.Term > rf.currentTerm {
+			DDEBUG(LEADER_APPEN_LOG_REPLY_HANDLER,
+				"[msgNo=%d], [leader=%d] append log at [peer=%d] failed, term is out, new [term=%d]\n",
+				reply.MsgNo, rf.me, peerID, reply.Term)
+			rf.turnToFollower(reply.Term)
+		}
+	} // will return immediately
 
 	// if self is still a leader
 	if rf.state == Leader {
+
 		// NB: msg might be delayed !!!
 		if reply.Success == false && reply.Term == -1 { // log dismatched, but msg maybe delayed.
 			DDEBUG(LEADER_APPEN_LOG_REPLY_HANDLER,
-				"[leader=%d] append log dismatched at [peer=%d]\n",
-				rf.me, peerID)
-			rf.nextIndex[peerID] = Max(rf.nextIndex[peerID]-1, rf.matchIndex[peerID])
-		} else { // append log successfully
+				"[msgNo=%d], [leader=%d] append log dismatched at [peer=%d]\n",
+				reply.MsgNo, rf.me, peerID)
+
+			rf.nextIndex[peerID] = Max(
+				Min(rf.nextIndex[peerID]-1, reply.FirstIndex-1),
+				rf.matchIndex[peerID]+1)
+
+		} else if reply.Success == true { // append log successfully
 			// NB: msg might be delayed !!!
 			DDEBUG(LEADER_APPEN_LOG_REPLY_HANDLER,
-				"[leader=%d] append log at [peer=%d] to [index=%d]\n",
-				rf.me, peerID, curIndex)
+				"[msgNo=%d], [leader=%d] append log at [peer=%d] to [index=%d]\n",
+				reply.MsgNo, rf.me, peerID, curIndex)
+
 			// update 2 index
 			rf.nextIndex[peerID] = Max(curIndex+1, rf.nextIndex[peerID])
 			rf.matchIndex[peerID] = Max(curIndex, rf.matchIndex[peerID])
-			rf.leaderUpdateCommitIndex()
+
+			rf.leaderTryUpdateCommitIndex()
+
+		} else {
+			DDEBUG(LEADER_APPEN_LOG_REPLY_HANDLER,
+				"WTF???\n",
+			)
 		}
 	}
 }
 
 // caller hold the lock
 // only called in `Raft.AppendLogReplyHandler()`
-func (rf *Raft) leaderUpdateCommitIndex() {
+func (rf *Raft) leaderTryUpdateCommitIndex() {
 	majority := (len(rf.peers) / 2) + 1
 	tmp_matchIndex := make([]int, len(rf.matchIndex))
 	copy(tmp_matchIndex, rf.matchIndex)
 	majority_commit_index := findKthLargest(tmp_matchIndex, majority)
 	if rf.commitIndex < majority_commit_index &&
-		rf.logs[majority_commit_index].Term == rf.currentTerm {
+		rf.logs[majority_commit_index].Term == rf.currentTerm { // Figure 8
 
 		DDEBUG(FIND_MAJORITY_COMMIT_INDEX,
 			"[leader=%d] update commit index, [%d->%d]\n",
@@ -582,24 +657,34 @@ func (rf *Raft) leaderUpdateCommitIndex() {
 // entry is not empty, called when client append log request.
 // entry is empty, called when send heartbeat msg.
 func (rf *Raft) leaderAppendLog() {
-	sendEntry := func(peerID int) {
+
+	sendEntry := func(peerID, currentTerm int) {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
 
 		var args = AppendEntryArg{
-			Term:              rf.currentTerm,
+			Term:              currentTerm,
 			Leader:            rf.me,
 			PrevLogIndex:      rf.nextIndex[peerID] - 1,
 			PrevLogTerm:       rf.logs[rf.nextIndex[peerID]-1].Term,
 			Entries:           make([]LogEntry, len(rf.logs)-rf.nextIndex[peerID]),
 			LeaderCommitIndex: rf.commitIndex,
+			MsgNo:             getMsgNo(),
 		}
 		copy(args.Entries, rf.logs[rf.nextIndex[peerID]:])
 
 		DDEBUG(LEADER_APPEND_LOG,
-			"[leader=%d] in [term=%d] send log entry to [peer=%d], [prevIndex=%d], [entry=%v]\n",
-			rf.me, args.Term, peerID,
-			args.PrevLogIndex, args.Entries)
+			"[msgNo=%d], [leader=%d] in [term=%d] send log entry to [peer=%d], [next=%d], [match=%d]\n",
+			args.MsgNo, rf.me, currentTerm, peerID,
+			rf.nextIndex[peerID], rf.matchIndex[peerID])
+
+		if len(args.Entries) > 1 {
+			DDEBUG(LEADER_APPEND_LOG,
+				"[msgNo=%d], [leader=%d] in [term=%d] send log entry to [peer=%d], [prev=(%d, %d)], [last=(%d, %d)]\n",
+				args.MsgNo, rf.me, args.Term, peerID,
+				args.PrevLogTerm, args.PrevLogIndex,
+				args.Entries[len(args.Entries)-1].Term, args.Entries[len(args.Entries)-1].Index)
+		}
 
 		go func() {
 			reply := AppendEntryReply{}
@@ -609,14 +694,27 @@ func (rf *Raft) leaderAppendLog() {
 		}()
 	}
 
+	rf.mu.Lock()
+
 	DDEBUG(LEADER_APPEND_LOG,
-		"[leader=%d] in [term=%d] send log, [leader.logs=%v]\n",
-		rf.me, rf.currentTerm, rf.logs)
+		"[leader=%d] in [term=%d] send log, [leader.lastlogs=(%d, %d)]\n",
+		rf.me, rf.currentTerm, rf.logs[len(rf.logs)-1].Term, rf.logs[len(rf.logs)-1].Index)
+
+	currentTerm := rf.currentTerm
 
 	peer_size := len(rf.peers)
+
+	rf.mu.Unlock()
+
 	for i := 0; i < peer_size; i++ {
-		if i != rf.me {
-			sendEntry(i)
+		select {
+		case <-rf.shutDownCh:
+		case <-rf.notLeaderCh:
+			return
+		default:
+			if i != rf.me {
+				sendEntry(i, currentTerm)
+			}
 		}
 	}
 }
@@ -630,7 +728,7 @@ func (rf *Raft) heartbeatRoutine() {
 		// return due to shutting down
 		case <-rf.shutDownCh:
 			return
-		// return due to tunring to follower
+		// return due to turning to follower
 		case <-rf.notLeaderCh:
 			return
 		default:
@@ -744,15 +842,25 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.notLeaderCh = make(chan struct{})
 	rf.shutDownCh = make(chan struct{})
 	rf.heartbeatInterval = time.Millisecond * 40 // small enough, not too small
+
+	// initialize from state persisted before a crash
+	rf.readPersist(persister.ReadRaftState())
+
 	// init timer
+	DDEBUG(TIMER,
+		"[peer=%d] start timer\n",
+		rf.me)
 	rf.electionTimer = time.AfterFunc(rf.electionTimeout, func() { rf.candidateRequestVote() })
+
+	if rf.state == Leader {
+		rf.stopTimer()
+		rf.electionSuccessReset()
+		go rf.heartbeatRoutine()
+	}
 
 	go rf.applyEntryRoutine()
 
 	DDEBUG(INIT, "init %d\n", rf.me)
-
-	// initialize from state persisted before a crash
-	rf.readPersist(persister.ReadRaftState())
 
 	return rf
 }

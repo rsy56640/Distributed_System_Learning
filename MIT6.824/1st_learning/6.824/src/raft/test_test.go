@@ -302,10 +302,6 @@ func TestRejoin2B(t *testing.T) {
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect(leader1)
 
-	DDEBUG(TEST,
-		"[leader=%d] has been disconnected\n",
-		leader1)
-
 	// make old leader try to agree on some entries
 	cfg.rafts[leader1].Start(102)
 	cfg.rafts[leader1].Start(103)
@@ -318,16 +314,8 @@ func TestRejoin2B(t *testing.T) {
 	leader2 := cfg.checkOneLeader()
 	cfg.disconnect(leader2)
 
-	DDEBUG(TEST,
-		"[leader=%d] has been disconnected\n",
-		leader2)
-
 	// old leader connected again
 	cfg.connect(leader1)
-
-	DDEBUG(TEST,
-		"[leader=%d] has been reconnected\n",
-		leader1)
 
 	cfg.one(104, 2, true)
 
@@ -528,6 +516,9 @@ func TestPersist12C(t *testing.T) {
 
 	cfg.begin("Test (2C): basic persistence")
 
+	DDEBUG(MARK,
+		"Start command 11\n")
+
 	cfg.one(11, servers, true)
 
 	// crash and re-start all
@@ -539,12 +530,29 @@ func TestPersist12C(t *testing.T) {
 		cfg.connect(i)
 	}
 
+	DDEBUG(MARK,
+		"Start command 12\n")
+
 	cfg.one(12, servers, true)
 
+	DDEBUG(MARK,
+		"After command 12\n")
+
 	leader1 := cfg.checkOneLeader()
+
+	DDEBUG(MARK,
+		"[peer=%d] will be killed\n", leader1)
+
 	cfg.disconnect(leader1)
 	cfg.start1(leader1)
 	cfg.connect(leader1)
+
+	DDEBUG(MARK,
+		"[peer=%d] has been killed and restart\n",
+		leader1)
+
+	DDEBUG(MARK,
+		"Start command 13, then 14\n")
 
 	cfg.one(13, servers, true)
 
@@ -553,6 +561,10 @@ func TestPersist12C(t *testing.T) {
 	cfg.one(14, servers-1, true)
 	cfg.start1(leader2)
 	cfg.connect(leader2)
+
+	DDEBUG(MARK,
+		"[peer=%d] has been killed and restart\n",
+		leader2)
 
 	cfg.wait(4, servers, -1) // wait for leader2 to join before killing i3
 
@@ -745,11 +757,22 @@ func TestFigure8Unreliable2C(t *testing.T) {
 
 	cfg.begin("Test (2C): Figure 8 (unreliable)")
 
-	cfg.one(rand.Int()%10000, 1, true)
+	one1 := rand.Int() % 10000
+	DDEBUG(MARK,
+		"[one1=%d]\n",
+		one1)
+	cfg.one(one1, 1, true)
+
+	iter_loop := 1000
+	set_long_reorder_time := 200
+	if SIMPLE_TEST {
+		iter_loop = 500
+		set_long_reorder_time = 100
+	}
 
 	nup := servers
-	for iters := 0; iters < 1000; iters++ {
-		if iters == 200 {
+	for iters := 0; iters < iter_loop; iters++ {
+		if iters == set_long_reorder_time {
 			cfg.setlongreordering(true)
 		}
 		leader := -1
@@ -788,7 +811,29 @@ func TestFigure8Unreliable2C(t *testing.T) {
 		}
 	}
 
-	cfg.one(rand.Int()%10000, servers, true)
+	//
+	// WTF?? Am I wrong??
+	// consider an old leader has been disconnected with lower term,
+	// after reconnect, it recieves the `cfg.one(one2)` and return true.
+	// thus `cfg.one(one2)` deems that this old leader will eventually make agreement.
+	//
+	// However, immediately after the old leader reply to `rf.Start(one2)`,
+	// it might recieve msg, only to find that itself is out of date.
+	//
+	// On top of that, I add `sleep(3s)` to let reconnected servers reach agreement.
+	//
+	//Debug = 1
+
+	one2 := rand.Int() % 10000
+	DDEBUG(MARK,
+		"[one1=%d], [one2=%d]\n",
+		one1, one2)
+
+	time.Sleep(3 * time.Second)
+
+	// code above is added.
+
+	cfg.one(one2, servers, true)
 
 	cfg.end()
 }

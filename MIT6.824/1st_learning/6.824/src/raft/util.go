@@ -4,7 +4,12 @@ import "log"
 
 const (
 	// used in the test file
-	TEST = false
+	MARK           = false
+	TEST_CONNECTED = false
+	TEST_APPLY     = false
+	SIMPLE_TEST    = false
+
+	TIMER = false
 
 	INIT                           = false
 	LEADER_APPEND_LOG              = false
@@ -18,6 +23,8 @@ const (
 	APPEND_ENTRY_RPC = false
 
 	FIND_MAJORITY_COMMIT_INDEX = false
+
+	PERSIST = false
 )
 
 func DDEBUG(debug_state bool, format string, a ...interface{}) (n int, err error) {
@@ -28,7 +35,7 @@ func DDEBUG(debug_state bool, format string, a ...interface{}) (n int, err error
 }
 
 // Debugging
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {

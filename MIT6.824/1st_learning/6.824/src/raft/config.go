@@ -234,6 +234,9 @@ func (cfg *config) cleanup() {
 // attach server i to the net.
 func (cfg *config) connect(i int) {
 	// fmt.Printf("connect(%d)\n", i)
+	DDEBUG(TEST_CONNECTED,
+		"[peer=%d] has been reconnected\n",
+		i)
 
 	cfg.connected[i] = true
 
@@ -257,6 +260,9 @@ func (cfg *config) connect(i int) {
 // detach server i from the net.
 func (cfg *config) disconnect(i int) {
 	// fmt.Printf("disconnect(%d)\n", i)
+	DDEBUG(TEST_CONNECTED,
+		"[peer=%d] has been disconnected\n",
+		i)
 
 	cfg.connected[i] = false
 
@@ -366,7 +372,7 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 
 		cfg.mu.Lock()
 		cmd1, ok := cfg.logs[i][index]
-		DDEBUG(TEST,
+		DDEBUG(TEST_APPLY,
 			"[cfg.peer=%d].apply: %+v\n",
 			i, cfg.logs[i])
 		cfg.mu.Unlock()
@@ -427,6 +433,11 @@ func (cfg *config) wait(index int, n int, startTerm int) interface{} {
 // if retry==false, calls Start() only once, in order
 // to simplify the early Lab 2B tests.
 func (cfg *config) one(cmd int, expectedServers int, retry bool) int {
+
+	DDEBUG(MARK,
+		"[one=%d]\n",
+		cmd)
+
 	t0 := time.Now()
 	starts := 0
 	for time.Since(t0).Seconds() < 10 {
