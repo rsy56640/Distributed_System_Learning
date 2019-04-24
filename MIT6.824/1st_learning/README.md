@@ -176,3 +176,14 @@ FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问�
 `cfg.one()` 是这个意思：选一个 leader，我们认为它可以就这个 command 达成一致，检测并返回。   
 但是现在有个问题：乱搞一波之后 reconnect，紧接着调用 `cfg.one()`。考虑这样一种情况：一个 old-term leader reconnect 之后，被 `cfg.one()` 选中，并承诺完成这个 agreement，然而它马上就会发现自己的 term 是 out-of-date，所以这个 command 就没了。这样 `cfg.one()` 中会认为没有达成一致。   
 **我个人的做法是在 reconnect 和 `cfg.one()` 中间等待3s，让 reconnect server 认清一下现状。**
+
+## Spinnaker 阅读笔记
+
+[Spinnaker 阅读笔记](https://github.com/rsy56640/paper-reading/tree/master/%E5%88%86%E5%B8%83%E5%BC%8F/Spinnaker)
+
+## Lec 7 Spinnaker
+
+- [Lec 7 Spinnaker](https://pdos.csail.mit.edu/6.824/notes/l-spinnaker.txt)
+- [Spinnaker FAQ](https://pdos.csail.mit.edu/6.824/papers/spinnaker-faq.txt)
+
+> FAQ 中表示很多问题比较迷。。比如一个 leader 怎么知道自己还是不是 leader
