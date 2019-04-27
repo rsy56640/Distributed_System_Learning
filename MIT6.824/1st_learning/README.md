@@ -187,3 +187,10 @@ FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问�
 - [Spinnaker FAQ](https://pdos.csail.mit.edu/6.824/papers/spinnaker-faq.txt)
 
 > FAQ 中表示很多问题比较迷。。比如一个 leader 怎么知道自己还是不是 leader
+
+## Zookeeper 阅读笔记
+
+[Zookeeper 阅读笔记]()
+
+## Lec 8
+
