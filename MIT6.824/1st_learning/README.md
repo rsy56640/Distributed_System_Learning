@@ -192,5 +192,30 @@ FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问�
 
 [Zookeeper 阅读笔记]()
 
-## Lec 8
+## Lec 8 Zookeeper
 
+- [Lec 8: Zookeeper Case Study](https://pdos.csail.mit.edu/6.824/notes/l-zookeeper.txt)
+- [ZooKeeper FAQ](https://pdos.csail.mit.edu/6.824/papers/zookeeper-faq.txt)
+
+## Lab 3A: Key/value service without log compaction
+
+说实话，他这个代码结构，文档还有注释都太糟糕了。。。
+
+我现在遇到一个大问题，做不下去了。。。   
+`Clerk.PutAppend()` -> RPC -> `KVServer.PutAppend()` -> `Raft.Start()` -> `Raft.leaderAppendLog()` -> `Raft.sendAppendEntry()` -> RPC -> `Raft.AppendEntry()`   
+问题在第二个 RPC 的时候，参数在 `Raft.sendAppendEntry()` 里面是好的，但是一到 `Raft.AppendEntry()` 中 `args` 直接变成空指针。。调了一下午，没有发现是怎么回事。。。（现在这部分代码先不提交）
+
+
+## Lec 9 Patterns and Hints for Concurrency in Go
+
+- [gopattern.pdf](https://pdos.csail.mit.edu/6.824/notes/gopattern.pdf)
+- [Lec 9 FAQ](https://pdos.csail.mit.edu/6.824/papers/go-faq.txt)
+
+有几个感觉挺不错：
+
+- *Convert mutexes into goroutines when it makes programs clearer*
+- *Use goroutines to let independent concerns run independently*
+- *Make sure you know why and when each goroutine will exit*
+- 注意如何通信，如何分割任务
+
+go 的 `select` 真不错，我还不知道怎么用 cpp 模拟这个。。。
