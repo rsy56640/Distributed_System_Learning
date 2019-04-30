@@ -219,3 +219,26 @@ FT 先把要读取的内容 copy 到 bounce buffer，primary 这时无法访问�
 - 注意如何通信，如何分割任务
 
 go 的 `select` 真不错，我还不知道怎么用 cpp 模拟这个。。。
+
+## Lec 10 Distributed Transactions
+
+- [Lec 10: Distributed Transactions](https://pdos.csail.mit.edu/6.824/notes/l-2pc.txt)
+- [Chapter 9: Atomicity: All-or-nothing and Before-or-after](https://ocw.mit.edu/resources/res-6-004-principles-of-computer-system-design-an-introduction-spring-2009/online-textbook/atomicity_open_5_0.pdf)
+- [Distributed Transactions FAQ](https://pdos.csail.mit.edu/6.824/papers/chapter9-faq.txt)
+
+分布式事务 = 并发控制 + 原子提交
+
+- 2PL：单机事务悲观并发控制
+- 2PC 可以看成一个高阶事务，其中包含很多基础事务（也许不同）
+- 最好让 2PC 中的 txn coordinator reliable，比如 Spanner 用 Paxos 做 coordinator replicate
+- 3PC 要求网络可靠，不会出现分区
+- 2PC 中的问题
+  - 执行结点在收到 "commit" 前 crash，reboot 后重问 coordinator
+  - 执行结点在 "prepare-ok" 之后一直没有收到消息，一直等待 coordinator 决策
+  - coordinator 在发送 "commit" 后 crash，则发送前一定有记录
+- Raft 和 2PC 针对的问题不同
+  - Raft 通过 replicate 来保证 availability
+  - 2PC 协调不同的工作一起完成，反可用性
+- 使用 Spanner 的办法来结合 Raft 和 2PC
+  - 使用 Raft replication 来保证每个 server 高可用
+  - 对每个 Raft 集群中的代表（Clerk）使用 2PC
