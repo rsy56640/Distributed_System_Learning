@@ -8,7 +8,29 @@ import (
 	"sync"
 )
 
-const Debug = 0
+const (
+	// used in the test file
+	MARK        = false
+	SIMPLE_TEST = false
+
+	TRY_LEADER = false
+
+	GET        = true
+	PUT_APPEND = true
+
+	SERVER_GET        = true
+	SERVER_PUT_APPEND = true
+)
+
+func DDEBUG(debug_state bool, format string, a ...interface{}) (n int, err error) {
+	if debug_state == true {
+		return DPrintf(format, a...)
+	}
+	return 0, nil
+}
+
+// Debugging
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -16,7 +38,6 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	}
 	return
 }
-
 
 type Op struct {
 	// Your definitions here.
@@ -33,15 +54,135 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+
+	persist *raft.Persister
+	db      map[string]string
+
+	// Index returned from `rf.Start(cmd)`, check the cmd at index when apply db
+	promise map[int]chan PutAppendArgs
+
+	// shutdown chan
+	shutDownCh chan struct{}
 }
 
+func (kv *KVServer) GetState() (int, bool) {
+	return kv.rf.GetState()
+}
+
+func (kv *KVServer) isLeader() bool {
+	_, isLeader := kv.rf.GetState()
+	return isLeader
+}
+
+func (kv *KVServer) applyRoutine() {
+	for {
+		var args PutAppendArgs
+		select {
+		case <-kv.shutDownCh:
+			return
+		case applyMsg := <-kv.applyCh:
+			args = applyMsg.Command.(PutAppendArgs)
+
+			kv.mu.Lock()
+			defer kv.mu.Unlock()
+
+			// notify the blocking `PutAppend()` to check and return
+			ch, present := kv.promise[applyMsg.CommandIndex]
+			if present {
+				ch <- args
+				delete(kv.promise, applyMsg.CommandIndex)
+			}
+
+			if args.Op == "Put" {
+				kv.db[args.Key] = args.Value
+			} else {
+				value, present := kv.db[args.Key]
+				if present {
+					kv.db[args.Key] = value + args.Value
+				} else {
+					kv.db[args.Key] = args.Value
+				}
+			}
+		}
+	}
+}
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	if kv.isLeader() {
+		reply.WrongLeader = false
+		reply.Err = ""
+		value, present := kv.db[args.Key]
+		if present {
+			reply.Value = value
+		} else {
+			reply.Value = ""
+		}
+		DDEBUG(SERVER_GET,
+			"[peer=%d] is leader, Get(%s)->%s\n",
+			kv.me, args.Key, reply.Value)
+	} else {
+		reply.WrongLeader = true
+		reply.Err = ""
+		DDEBUG(SERVER_GET,
+			"[peer=%d] is not leader, Get(%s) fail\n",
+			kv.me, args.Key)
+	}
+}
+
+func cmd_equal(arg1, arg2 *PutAppendArgs) bool {
+	if arg1.Key != arg2.Key {
+		return false
+	}
+	if arg1.Value != arg2.Value {
+		return false
+	}
+	if arg1.Op != arg2.Op {
+		return false
+	}
+	return true
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	index, _, isLeader := kv.rf.Start(args)
+	if !isLeader {
+		reply.WrongLeader = true
+		DDEBUG(SERVER_PUT_APPEND,
+			"[peer=%d] is not leader, %s[%s, %s] fail\n",
+			kv.me, args.Op, args.Key, args.Value)
+
+		return
+	}
+	DDEBUG(SERVER_PUT_APPEND,
+		"[peer=%d] is leader, %s[%s, %s] will might be ok at [index=%d]\n",
+		kv.me, args.Op, args.Key, args.Value, index)
+
+	kv.mu.Lock()
+	kv.promise[index] = make(chan PutAppendArgs)
+	ch, _ := kv.promise[index]
+	kv.mu.Unlock()
+
+	// wait until commit such index
+	select {
+	case <-kv.shutDownCh:
+		return
+
+	case applyArg := <-ch:
+		if cmd_equal(args, &applyArg) {
+			reply.WrongLeader = false
+			reply.Err = OK
+			DDEBUG(SERVER_PUT_APPEND,
+				"[peer=%d] is leader, %s[%s, %s] ok at [index=%d]\n",
+				kv.me, args.Op, args.Key, args.Value, index)
+		} else {
+			reply.WrongLeader = true
+			DDEBUG(SERVER_PUT_APPEND,
+				"[peer=%d] is leader, %s[%s, %s] has not been commit\n",
+				kv.me, args.Op, args.Key, args.Value)
+		}
+	}
+
 }
 
 //
@@ -79,11 +220,24 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.maxraftstate = maxraftstate
 
 	// You may need initialization code here.
-
+	kv.persist = persister
 	kv.applyCh = make(chan raft.ApplyMsg)
-	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.db = make(map[string]string)
+
+	// Index returned from `rf.Start(cmd)`, check the cmd at index when apply db
+	kv.promise = make(map[int]chan PutAppendArgs)
+
+	// shutdown chan
+	kv.shutDownCh = make(chan struct{})
 
 	// You may need initialization code here.
+
+	// apply log from raft
+	go func() {
+		kv.applyRoutine()
+	}()
+
+	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	return kv
 }

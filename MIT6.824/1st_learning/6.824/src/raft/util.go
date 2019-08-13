@@ -9,20 +9,22 @@ const (
 	TEST_APPLY     = false
 	SIMPLE_TEST    = false
 
+	RPC_CALL = true
+
 	TIMER = false
 
 	INIT                           = false
-	LEADER_APPEND_LOG              = false
+	LEADER_APPEND_LOG              = true
 	LEADER_APPEN_LOG_REPLY_HANDLER = false
 	SEND_HEARTBEAT_ROUTINE         = false
 	APPLY_ENTRY_ROUTINE            = false
 
-	CANVASS_VOTE = false
+	CANVASS_VOTE = true
 
 	REQUEST_VOTE_RPC = false
-	APPEND_ENTRY_RPC = false
+	APPEND_ENTRY_RPC = true
 
-	FIND_MAJORITY_COMMIT_INDEX = false
+	FIND_MAJORITY_COMMIT_INDEX = true
 
 	PERSIST = false
 )
@@ -35,7 +37,7 @@ func DDEBUG(debug_state bool, format string, a ...interface{}) (n int, err error
 }
 
 // Debugging
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {

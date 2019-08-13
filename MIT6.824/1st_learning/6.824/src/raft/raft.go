@@ -321,12 +321,12 @@ func (rf *Raft) electionSuccessReset() {
 	rf.leader = rf.me
 
 	count := len(rf.peers)
-	length := len(rf.logs)
+	lastIndex := rf.logs[len(rf.logs)-1].Index
 	for i := 0; i < count; i++ {
-		rf.nextIndex[i] = length
+		rf.nextIndex[i] = lastIndex + 1
 		rf.matchIndex[i] = 0
 	}
-	rf.matchIndex[rf.me] = length - 1
+	rf.matchIndex[rf.me] = lastIndex
 }
 
 func (rf *Raft) candidateRequestVote() {
@@ -485,6 +485,8 @@ func (rf *Raft) AppendEntry(args *AppendEntryArg, reply *AppendEntryReply) {
 	defer rf.mu.Unlock()
 	defer rf.persist()
 
+	DDEBUG(APPEND_ENTRY_RPC, "[peer=%d], [args=%v]\n", rf.me, args)
+
 	reply.MsgNo = args.MsgNo
 
 	// update self
@@ -584,6 +586,9 @@ func (rf *Raft) AppendEntry(args *AppendEntryArg, reply *AppendEntryReply) {
 }
 
 func (rf *Raft) sendAppendEntry(server int, args *AppendEntryArg, reply *AppendEntryReply) bool {
+	DDEBUG(RPC_CALL,
+		"RPC [leader=%d -> peer=%d], `sendAppendEntry`: %v\n",
+		rf.me, server, args)
 	ok := rf.peers[server].Call("Raft.AppendEntry", args, reply)
 	return ok
 }
@@ -795,8 +800,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 //
 func (rf *Raft) Kill() {
 	// Your code here, if desired.
-	close(rf.shutDownCh)
 	rf.commitCond.Signal()
+	close(rf.shutDownCh)
 }
 
 //
