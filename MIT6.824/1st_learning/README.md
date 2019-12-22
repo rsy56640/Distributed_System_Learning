@@ -1,6 +1,6 @@
 # MIT6.824 第一次学习记录
 
-课程链接：[https://pdos.csail.mit.edu/6.824/schedule.html](https://pdos.csail.mit.edu/6.824/schedule.html)
+课程链接：[http://nil.csail.mit.edu/6.824/2018/schedule.html](http://nil.csail.mit.edu/6.824/2018/schedule.html)
 
 这次功利性比较强，所以很多延伸的工作很难展开了，只能跟着课程走一遍罢了。   
 之后一定再补回来。
@@ -242,3 +242,21 @@ go 的 `select` 真不错，我还不知道怎么用 cpp 模拟这个。。。
 - 使用 Spanner 的办法来结合 Raft 和 2PC
   - 使用 Raft replication 来保证每个 server 高可用
   - 对每个 Raft 集群中的代表（Clerk）使用 2PC
+
+## LEC 11: Optimistic Concurrency Control
+
+## LEC 12: Big Data: Spark
+
+## LEC 13: Big Data: Naiad
+
+## LEC 14: Distributed Machine Learning: Parameter Server
+
+## LEC 15: Cache Consistency: Frangipani
+
+> 这篇文章是有意义的  
+> [frangipani notes](http://nil.csail.mit.edu/6.824/2018/notes/l-frangipani.txt)  
+> [frangipani faq](http://nil.csail.mit.edu/6.824/2018/papers/frangipani-faq.txt)  
+
+## LEC 16: Cache Consistency: Memcached at Facebook
+
+## LEC 17: Disconnected Operation, Eventual Consistency
