@@ -1,15 +1,15 @@
 # Streaming Systems
 
-- [Streaming 101](#1)
-- [The What, Where, When, and How of Data Processing](#2)
-- [Watermarks](#3)
-- [Advanced Windowing](#4)
-- [Exactly-Once and Side Effects](#5)
-- [Streams and Tables](#6)
-- [The Practicalities of Persistent State](#7)
-- [Streaming SQL](#8)
-- [Streaming Joins](#9)
-- [The Evolution of Large-Scale Data Processing](#10)
+- [1 Streaming 101](#1)
+- [2 The What, Where, When, and How of Data Processing](#2)
+- [3 Watermarks](#3)
+- [4 Advanced Windowing](#4)
+- [5 Exactly-Once and Side Effects](#5)
+- [6 Streams and Tables](#6)
+- [7 The Practicalities of Persistent State](#7)
+- [8 Streaming SQL](#8)
+- [9 Streaming Joins](#9)
+- [10 The Evolution of Large-Scale Data Processing](#10)
 
 
 &nbsp;   
